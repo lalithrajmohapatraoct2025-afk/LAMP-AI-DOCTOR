@@ -6,54 +6,24 @@ import requests
 disease_data = pd.read_excel("Diseases123.xlsx")
 disease_data = disease_data.loc[:, ~disease_data.columns.str.contains('^Unnamed')]
 
-# ----------------------- GOOGLE API KEY -----------------------
+# ----------------------- GOOGLE MAPS API KEY -----------------------
 GOOGLE_MAPS_API_KEY = "AIzaSyDLmzBXn6sQlfMu0zZhfVkXIJ9_2X7Dt24"
 
-# ----------------------- AUTO LOCATION -----------------------
-def auto_detect_city():
-    try:
-        response = requests.get("https://ipinfo.io").json()
-        return response.get("city", None)
-    except:
-        return None
-
-
-# ----------------------- HOSPITAL FINDER -----------------------
-def find_hospitals(location):
-    try:
-        geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={location}&key={GOOGLE_MAPS_API_KEY}"
-        geocode_response = requests.get(geocode_url).json()
-
-        if geocode_response.get("status") != "OK":
-            return None, None, []
-
-        lat = geocode_response["results"][0]["geometry"]["location"]["lat"]
-        lng = geocode_response["results"][0]["geometry"]["location"]["lng"]
-
-        places_url = (
-            f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
-            f"location={lat},{lng}&radius=5000&type=hospital&key={GOOGLE_MAPS_API_KEY}"
-        )
-        places_response = requests.get(places_url).json()
-
-        hospitals = []
-        for place in places_response.get("results", []):
-            hospitals.append({
-                "name": place["name"],
-                "address": place.get("vicinity", "Address unavailable")
-            })
-
-        return lat, lng, hospitals
-    except:
-        return None, None, []
-
-
-# ----------------------- PAGE UI -----------------------
+# ----------------------- PAGE CONFIG -----------------------
 st.set_page_config(page_title="AI Doctor Assistant", page_icon="🩺")
 
 st.markdown("<h1 style='text-align:center;'>🩺 AI Doctor Assistant</h1>", unsafe_allow_html=True)
 
-# ----------------------- DROPDOWN + SEARCH BOX -----------------------
+# ----------------------- USER DETAILS -----------------------
+st.subheader("👤 Patient Details")
+
+user_name = st.text_input("Name:")
+user_age = st.number_input("Age:", min_value=1, max_value=120)
+user_gender = st.selectbox("Gender:", ["Male", "Female", "Other"])
+
+st.write(f"✅ Details saved for: **{user_name}**, Age: **{user_age}**, Gender: **{user_gender}**")
+
+# ----------------------- DISEASE SEARCH -----------------------
 st.subheader("🔍 Find Disease Information")
 
 disease_list = ["--- Select ---"] + sorted(disease_data["Disease"].unique().tolist())
@@ -61,13 +31,60 @@ selected_disease = st.selectbox("Choose a disease:", disease_list)
 
 search_input = st.text_input("Or search disease/symptom:")
 
-# Determine final disease value
-final_query = None
-if selected_disease != "--- Select ---":
-    final_query = selected_disease
-elif search_input:
-    final_query = search_input
+# Pick highest priority result
+final_query = selected_disease if selected_disease != "--- Select ---" else search_input
 
+
+# ----------------------- JAVASCRIPT AUTO LOCATION -----------------------
+def get_location():
+    js_code = """
+    <script>
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const coords = pos.coords.latitude + "," + pos.coords.longitude;
+            window.parent.postMessage({location: coords}, "*");
+        },
+        (err) => {
+            window.parent.postMessage({location: null}, "*");
+        });
+    </script>
+    """
+    st.components.v1.html(js_code, height=0)
+
+get_location()
+
+location_coords = st.session_state.get("location_coords", None)
+
+# Script listener
+import streamlit.components.v1 as components
+
+components.html("""
+<script>
+  window.addEventListener("message", (event) => {
+      const loc = event.data.location;
+      if (loc) {
+          window.parent.postMessage({set_location: loc}, "*");
+      }
+  });
+</script>
+""", height=0)
+
+# ----------------------- Capture Browser Location -----------------------
+loc_event = st.experimental_get_query_params()
+
+if "set_location" in loc_event:
+    st.session_state["location_coords"] = loc_event["set_location"][0]
+
+location_display = (
+    f"📍 Your location detected: {st.session_state['location_coords']}"
+    if st.session_state.get("location_coords")
+    else "⚠️ Auto location not detected. Please enter manually."
+)
+
+st.subheader("📍 Location")
+st.write(location_display)
+
+manual_location = st.text_input("Or enter your city:")
 
 # ----------------------- DISPLAY DISEASE INFO -----------------------
 if final_query:
@@ -84,25 +101,53 @@ if final_query:
         st.write(f"**Common Symptoms:** {row['Common Symptoms']}")
         st.write(f"**Specialist to Consult:** {row['Specialist to Consult']}")
 
-        # ----------------------- AUTO LOCATION -----------------------
-        st.subheader("📍 Nearby Hospitals")
+        # ----------------------- HOSPITAL SEARCH -----------------------
+        st.subheader("🏥 Nearby Hospitals")
 
-        auto_city = auto_detect_city()
-        st.write(f"Auto-detected location: **{auto_city}**" if auto_city else "Location detection failed.")
+        # Choose coordinates
+        if st.session_state.get("location_coords"):
+            lat, lng = st.session_state["location_coords"].split(",")
+        else:
+            location = manual_location
+            if not location:
+                st.warning("Enter a location to search hospitals.")
+                lat = lng = None
 
-        location_input = st.text_input("Enter your city (or keep auto-detected):", value=auto_city)
-
-        if location_input:
-            lat, lng, hospitals = find_hospitals(location_input)
-
-            if hospitals:
-                st.success("✅ Hospitals Found Nearby")
-                for h in hospitals:
-                    st.write(f"🏥 **{h['name']}**")
-                    st.write(h["address"])
-                    st.write("---")
+        if st.session_state.get("location_coords") or manual_location:
+            if st.session_state.get("location_coords"):
+                # reverse geocode
+                places_url = (
+                    f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
+                    f"location={lat},{lng}&radius=5000&type=hospital&key={GOOGLE_MAPS_API_KEY}"
+                )
             else:
-                st.error("Could not find hospitals. Try a different location.")
+                # normal geocode
+                geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={manual_location}&key={GOOGLE_MAPS_API_KEY}"
+                geo_resp = requests.get(geocode_url).json()
+
+                if geo_resp.get("status") == "OK":
+                    lat = geo_resp["results"][0]["geometry"]["location"]["lat"]
+                    lng = geo_resp["results"][0]["geometry"]["location"]["lng"]
+                else:
+                    st.error("Could not find this location.")
+                    lat = lng = None
+
+            if lat and lng:
+                places_url = (
+                    f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
+                    f"location={lat},{lng}&radius=5000&type=hospital&key={GOOGLE_MAPS_API_KEY}"
+                )
+                places_response = requests.get(places_url).json()
+
+                hospitals = places_response.get("results", [])
+
+                if hospitals:
+                    for h in hospitals:
+                        st.write(f"🏥 **{h['name']}**")
+                        st.write(h.get("vicinity", "Address unavailable"))
+                        st.write("---")
+                else:
+                    st.error("No hospitals found.")
 
 
 # ----------------------- FOOTER -----------------------
