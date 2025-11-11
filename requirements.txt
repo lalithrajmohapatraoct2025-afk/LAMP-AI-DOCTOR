@@ -1,6 +1,7 @@
 streamlit
 pandas
+googlemaps
 openpyxl
-requests
-qrcode
+Pillow
+
 
