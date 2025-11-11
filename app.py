@@ -2,86 +2,64 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# -------------------------------
-#   CONFIG
-# -------------------------------
-GOOGLE_API_KEY = "AIzaSyDLmzBXn6sQlfMu0zZhfVkXIJ9_2X7Dt24"   # 
+# Load Excel data
+df = pd.read_excel("Diseases123.xlsx")
 
-# Title and header
-st.set_page_config(page_title="Lamp AI Doctor", layout="wide")
+st.title("Lamp AI Doctor")
 
-doctor_gif = "https://media.giphy.com/media/3o7bu3XilJ5BOiSGic/giphy.gif"
+# User basic info
+name = st.text_input("Enter your name")
+age = st.number_input("Enter your age", min_value=1, max_value=120)
+gender = st.selectbox("Select gender", ["Male", "Female", "Other"])
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.title("🩺 Lamp AI Doctor")
-with col2:
-    st.image(doctor_gif)
+st.write("---")
 
-st.write("Hello! I'm your virtual doctor. Please enter your details below.")
+# Disease Assistant
+st.subheader("Disease Information Assistant")
 
-# -------------------------------
-#   Patient basic info
-# -------------------------------
-name = st.text_input("Enter your name:")
-age = st.number_input("Enter your age:", min_value=1, max_value=110)
-gender = st.selectbox("Select your gender:", ["Male", "Female", "Other"])
-
-st.divider()
-
-# -------------------------------
-#   Load disease file
-# -------------------------------
-@st.cache_data
-def load_data():
-    df = pd.read_excel("Diseases123.xlsx")
-    return df
-
-df = load_data()
-
-st.subheader("🔍 Disease Information")
-
-# Search + Dropdown combined
-disease_list = df['Disease'].astype(str).tolist()
-search = st.text_input("Search disease:")
-dropdown = st.selectbox("Or choose from list:", disease_list)
-
-selected_disease = search if search.strip() != "" else dropdown
+disease_list = df["Disease"].dropna().unique()
+selected_disease = st.selectbox("Select a disease", disease_list)
 
 if selected_disease:
-    filtered = df[df['Disease'].str.lower() == selected_disease.lower()]
-    if not filtered.empty:
-        st.write("### 🧬 Disease Details")
-        st.write(filtered.iloc[0].to_dict())
-    else:
-        st.write("Disease not found")
+    info = df[df["Disease"] == selected_disease].iloc[0]
 
-st.divider()
+    st.write("### Disease Details")
+    st.write(f"**Category:** {info['Category']}")
+    st.write(f"**Common Symptoms:** {info['Common Symptoms']}")
+    st.write(f"**Specialist to Consult:** {info['Specialist to Consult']}")
 
-# -------------------------------
-#   Nearest Hospital Finder
-# -------------------------------
-st.subheader("🏥 Find Nearest Hospital")
+st.write("---")
 
-location = st.text_input("Enter your current location (City / Area / Pin Code):")
+# Location + Nearby hospital search
+st.subheader("Find Nearest Hospital")
 
-if st.button("Find nearest hospitals"):
-    if location:
-        url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query=hospitals+near+{location}&key={GOOGLE_API_KEY}"
+location_query = st.text_input("Enter your city or area name")
 
-        response = requests.get(url)
-        data = response.json()
+if location_query:
+    api_key = st.secrets["AIzaSyDLmzBXn6sQlfMu0zZhfVkXIJ9_2X7Dt24"]
 
-        if "results" in data:
-            st.write("### Nearby Hospitals:")
-            for place in data["results"][:5]:  # Show top 5
-                st.write(f"🏥 **{place['name']}**")
-                st.write(place.get("formatted_address", "No address available"))
+    geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={location_query}&key={api_key}"
+    geocode_response = requests.get(geocode_url).json()
+
+    if geocode_response["status"] == "OK":
+        lat = geocode_response["results"][0]["geometry"]["location"]["lat"]
+        lng = geocode_response["results"][0]["geometry"]["location"]["lng"]
+
+        places_url = (
+            f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+            f"?location={lat},{lng}&radius=3000&type=hospital&key={api_key}"
+        )
+
+        places_response = requests.get(places_url).json()
+
+        st.write("### Nearby Hospitals")
+
+        if "results" in places_response and len(places_response["results"]) > 0:
+            for place in places_response["results"][:5]:
+                st.write(f"**Name:** {place['name']}")
+                st.write(f"Address: {place.get('vicinity','N/A')}")
                 st.write("---")
         else:
-            st.write("No hospital data found. Try again.")
+            st.write("No hospitals found near this area.")
     else:
-        st.warning("Please enter a location first.")
-
-
-
+        st.write("Invalid location. Please try again.")
