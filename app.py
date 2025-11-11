@@ -15,6 +15,11 @@ st.set_page_config(page_title="AI Doctor", page_icon="🩺", layout="centered")
 # ------------ HEADER ------------
 st.markdown("<h1 style='text-align:center;'>🩺 AI Doctor Assistant</h1>", unsafe_allow_html=True)
 st.write("Describe your symptoms or type a disease name to get medical guidance.")
+st.subheader("🧑 Patient Information")
+
+user_name = st.text_input("Enter your name:")
+user_age = st.number_input("Enter your age:", min_value=1, max_value=120)
+user_gender = st.selectbox("Gender:", ["Male", "Female", "Other"])
 
 # ------------ TEXT INPUT ------------
 user_query = st.text_input("Enter disease or symptom:")
