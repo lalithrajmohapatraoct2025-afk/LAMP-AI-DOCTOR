@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 
 # ------------ LOAD DISEASE DATA ------------
-disease_data = pd.read_csv("diseases123.csv")  # Make sure the file name is correct
+disease_data = pd.read_excel("Diseases123.xlsx")
 
 # ------------ GOOGLE MAPS API KEY ------------
 GOOGLE_MAPS_API_KEY = "AIzaSyDLmzBXn6sQlfMu0zZhfVkXIJ9_2X7Dt24"
