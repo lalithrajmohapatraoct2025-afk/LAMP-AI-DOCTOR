@@ -4,6 +4,7 @@ import requests
 
 # ------------ LOAD DISEASE DATA ------------
 disease_data = pd.read_excel("Diseases123.xlsx")
+disease_data = disease_data.loc[:, ~disease_data.columns.str.contains('^Unnamed')]
 
 # ------------ GOOGLE MAPS API KEY ------------
 GOOGLE_MAPS_API_KEY = "AIzaSyDLmzBXn6sQlfMu0zZhfVkXIJ9_2X7Dt24"
@@ -25,21 +26,29 @@ def search_disease(query):
 
 # ------------ GOOGLE HOSPITAL SEARCH ------------
 def find_hospitals(location):
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={location}&key={GOOGLE_MAPS_API_KEY}"
-    geo = requests.get(url).json()
+    try:
+        geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={location}&key={GOOGLE_MAPS_API_KEY}"
+        geocode_response = requests.get(geocode_url).json()
 
-    if geo["status"] != "OK":
-        return None, None
+        if "status" not in geocode_response or geocode_response["status"] != "OK":
+            return None, None, []
 
-    lat = geo["results"][0]["geometry"]["location"]["lat"]
-    lng = geo["results"][0]["geometry"]["location"]["lng"]
+        lat = geocode_response["results"][0]["geometry"]["location"]["lat"]
+        lng = geocode_response["results"][0]["geometry"]["location"]["lng"]
 
-    nearby_url = (
-        f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
-        f"location={lat},{lng}&radius=3000&type=hospital&key={GOOGLE_MAPS_API_KEY}"
-    )
-    hospital_data = requests.get(nearby_url).json()
-    return lat, lng, hospital_data
+        places_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius=5000&type=hospital&key={GOOGLE_MAPS_API_KEY}"
+        places_response = requests.get(places_url).json()
+
+        hospitals = []
+        if "results" in places_response:
+            for place in places_response["results"]:
+                hospitals.append(place["name"])
+
+        return lat, lng, hospitals
+
+    except Exception as e:
+        return None, None, []
+
 
 
 # ------------ MAIN SEARCH RESULT ------------
@@ -50,7 +59,19 @@ if user_query:
     if result_df.empty:
         st.warning("No matching disease found!")
     else:
-        st.dataframe(result_df)
+        row = result_df.iloc[0]
+
+        # ✅ PATIENT DETAILS (ADD HERE)
+        st.subheader("👤 Patient Details")
+        st.write(f"**Name:** {user_name}")
+        st.write(f"**Age:** {user_age}")
+        st.write(f"**Gender:** {user_gender}")
+
+        st.subheader("✅ Disease Information")
+        st.write(f"**Disease:** {row['Disease']}")
+        st.write(f"**Category:** {row['Category']}")
+        st.write(f"**Common Symptoms:** {row['Common Symptoms']}")
+        st.write(f"**Specialist to Consult:** {row['Specialist to Consult']}")
 
         st.subheader("📍 Find nearby hospitals")
         location = st.text_input("Enter your city or location:")
@@ -60,10 +81,9 @@ if user_query:
 
             if hospitals:
                 st.success("✅ Nearby hospitals found")
-                for item in hospitals["results"]:
-                    st.write(f"🏥 **{item['name']}**")
-                    st.write(item.get("vicinity", "Address not available"))
-                    st.write("---")
+                for item in hospitals:
+                    st.write(f"🏥 {item}")
+
             else:
                 st.error("Could not find hospitals. Try a different location.")
 
